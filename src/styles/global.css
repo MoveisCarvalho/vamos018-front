@@ -1,0 +1,80 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    background: #f8f9fa;
+    color: #333;
+    -webkit-font-smoothing: antialiased;
+    touch-action: manipulation;
+}
+
+button,
+input,
+select,
+textarea {
+    font-size: 16px !important;
+    /* Previne zoom automático no iOS */
+    touch-action: manipulation;
+}
+
+/* Botões grandes para mobile */
+.btn-mobile {
+    padding: 14px 24px;
+    font-size: 18px;
+    border-radius: 12px;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 54px;
+    min-width: 48px;
+}
+
+.btn-primary {
+    background: #007aff;
+    color: white;
+}
+
+.btn-primary:active {
+    transform: scale(0.96);
+    background: #0055b3;
+}
+
+.btn-success {
+    background: #34c759;
+    color: white;
+}
+
+.btn-danger {
+    background: #ff3b30;
+    color: white;
+}
+
+/* Cards com padding generoso para toque */
+.card-mobile {
+    padding: 16px;
+    margin-bottom: 12px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Inputs grandes */
+.input-mobile {
+    padding: 14px 16px;
+    border: 2px solid #e5e5ea;
+    border-radius: 12px;
+    width: 100%;
+    background: white;
+    transition: border-color 0.2s;
+}
+
+.input-mobile:focus {
+    border-color: #007aff;
+    outline: none;
+}
