@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { signInWithGoogle, signInWithFacebook } from '../services/firebase';
 import api from '../services/api';
 
 export const Login: React.FC = () => {
+    const navigate = useNavigate();
+    const { login, register, user } = useAuth();
+
     const [isRegister, setIsRegister] = useState(false);
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -13,10 +17,11 @@ export const Login: React.FC = () => {
     const [twoFactorRequired, setTwoFactorRequired] = useState(false);
     const [message, setMessage] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login, register, user } = useAuth();
 
+    // Se já estiver logado, redireciona
     if (user) {
-        return <div style={{ padding: 20, textAlign: 'center' }}>Redirecionando...</div>;
+        navigate(user.role === 'passenger' ? '/passenger' : '/driver', { replace: true });
+        return null;
     }
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -27,9 +32,21 @@ export const Login: React.FC = () => {
         try {
             if (isRegister) {
                 await register(name, email, password, role);
+                navigate(role === 'passenger' ? '/passenger' : '/driver', { replace: true });
             } else {
-                // Tenta login – se o backend pedir 2FA, ele retornará erro com twoFactorRequired
                 await login(email, password, twoFactorToken);
+                // Após login, o AuthContext já atualizou o user, então redirecionamos
+                // mas precisamos esperar a atualização; faremos no useEffect abaixo.
+                // Por enquanto, apenas redirecionamos após login bem-sucedido.
+                // Como o login é assíncrono e o estado pode não ter atualizado, usaremos um pequeno delay ou observaremos.
+                // Melhor: usar o refreshUser ou confiar no redirecionamento do AppRoutes.
+                // Vamos redirecionar baseado na role que veio no login.
+                // Mas não temos a role aqui. Podemos ler do localStorage após login.
+                const storedUser = localStorage.getItem('user');
+                if (storedUser) {
+                    const parsed = JSON.parse(storedUser);
+                    navigate(parsed.role === 'passenger' ? '/passenger' : '/driver', { replace: true });
+                }
             }
         } catch (error: any) {
             const errMsg = error.response?.data?.message || 'Erro ao fazer login/cadastro';
@@ -53,12 +70,14 @@ export const Login: React.FC = () => {
                 firebaseToken,
                 email: userCred.email,
                 name: userCred.displayName || '',
-                role: 'passenger' // ou pode deixar o usuário escolher depois
+                role: 'passenger' // pode ser alterado depois
             });
             const { token, user } = res.data;
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(user));
-            window.location.reload();
+            // Força a atualização do contexto (mas já será feito pelo AuthProvider ao recarregar)
+            // Vamos redirecionar manualmente
+            navigate(user.role === 'passenger' ? '/passenger' : '/driver', { replace: true });
         } catch (error: any) {
             setMessage(error.response?.data?.message || 'Erro no login social');
         } finally {
@@ -67,27 +86,13 @@ export const Login: React.FC = () => {
     };
 
     return (
-        <div style={{
-            maxWidth: 400,
-            margin: '20px auto',
-            padding: '20px 16px',
-            background: 'white',
-            borderRadius: 12,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}>
+        <div style={{ maxWidth: 400, margin: '20px auto', padding: '20px 16px', background: 'white', borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
             <h2 style={{ textAlign: 'center', marginBottom: 20, fontSize: '1.8rem' }}>
                 {isRegister ? 'Criar Conta' : 'Entrar'}
             </h2>
 
             {message && (
-                <div style={{
-                    padding: 10,
-                    background: '#f8d7da',
-                    color: '#721c24',
-                    borderRadius: 4,
-                    marginBottom: 12,
-                    textAlign: 'center'
-                }}>
+                <div style={{ padding: 10, background: '#f8d7da', color: '#721c24', borderRadius: 4, marginBottom: 12, textAlign: 'center' }}>
                     {message}
                 </div>
             )}
@@ -102,29 +107,13 @@ export const Login: React.FC = () => {
                             onChange={(e) => setName(e.target.value)}
                             required
                             disabled={loading}
-                            style={{
-                                width: '100%',
-                                padding: '14px 12px',
-                                fontSize: '16px',
-                                marginBottom: 12,
-                                border: '1px solid #ccc',
-                                borderRadius: 8,
-                                background: '#f9f9f9'
-                            }}
+                            style={{ width: '100%', padding: '14px 12px', fontSize: '16px', marginBottom: 12, border: '1px solid #ccc', borderRadius: 8, background: '#f9f9f9' }}
                         />
                         <select
                             value={role}
                             onChange={(e) => setRole(e.target.value as 'passenger' | 'driver')}
                             disabled={loading}
-                            style={{
-                                width: '100%',
-                                padding: '14px 12px',
-                                fontSize: '16px',
-                                marginBottom: 12,
-                                border: '1px solid #ccc',
-                                borderRadius: 8,
-                                background: '#f9f9f9'
-                            }}
+                            style={{ width: '100%', padding: '14px 12px', fontSize: '16px', marginBottom: 12, border: '1px solid #ccc', borderRadius: 8, background: '#f9f9f9' }}
                         >
                             <option value="passenger">Passageiro</option>
                             <option value="driver">Motorista</option>
@@ -139,15 +128,7 @@ export const Login: React.FC = () => {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     disabled={loading}
-                    style={{
-                        width: '100%',
-                        padding: '14px 12px',
-                        fontSize: '16px',
-                        marginBottom: 12,
-                        border: '1px solid #ccc',
-                        borderRadius: 8,
-                        background: '#f9f9f9'
-                    }}
+                    style={{ width: '100%', padding: '14px 12px', fontSize: '16px', marginBottom: 12, border: '1px solid #ccc', borderRadius: 8, background: '#f9f9f9' }}
                 />
 
                 <input
@@ -157,15 +138,7 @@ export const Login: React.FC = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     disabled={loading}
-                    style={{
-                        width: '100%',
-                        padding: '14px 12px',
-                        fontSize: '16px',
-                        marginBottom: 12,
-                        border: '1px solid #ccc',
-                        borderRadius: 8,
-                        background: '#f9f9f9'
-                    }}
+                    style={{ width: '100%', padding: '14px 12px', fontSize: '16px', marginBottom: 12, border: '1px solid #ccc', borderRadius: 8, background: '#f9f9f9' }}
                 />
 
                 {twoFactorRequired && (
@@ -176,33 +149,14 @@ export const Login: React.FC = () => {
                         onChange={(e) => setTwoFactorToken(e.target.value)}
                         maxLength={6}
                         disabled={loading}
-                        style={{
-                            width: '100%',
-                            padding: '14px 12px',
-                            fontSize: '16px',
-                            marginBottom: 12,
-                            border: '1px solid #ccc',
-                            borderRadius: 8,
-                            background: '#f9f9f9'
-                        }}
+                        style={{ width: '100%', padding: '14px 12px', fontSize: '16px', marginBottom: 12, border: '1px solid #ccc', borderRadius: 8, background: '#f9f9f9' }}
                     />
                 )}
 
                 <button
                     type="submit"
                     disabled={loading}
-                    style={{
-                        width: '100%',
-                        padding: '16px',
-                        fontSize: '18px',
-                        background: '#007bff',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: 8,
-                        cursor: 'pointer',
-                        fontWeight: 'bold',
-                        opacity: loading ? 0.6 : 1
-                    }}
+                    style={{ width: '100%', padding: '16px', fontSize: '18px', background: '#007bff', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold', opacity: loading ? 0.6 : 1 }}
                 >
                     {loading ? 'Carregando...' : (isRegister ? 'Cadastrar' : 'Entrar')}
                 </button>
@@ -212,14 +166,7 @@ export const Login: React.FC = () => {
                 <button
                     onClick={() => setIsRegister(!isRegister)}
                     disabled={loading}
-                    style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#007bff',
-                        fontSize: '16px',
-                        cursor: 'pointer',
-                        textDecoration: 'underline'
-                    }}
+                    style={{ background: 'none', border: 'none', color: '#007bff', fontSize: '16px', cursor: 'pointer', textDecoration: 'underline' }}
                 >
                     {isRegister ? 'Já tem conta? Faça login' : 'Não tem conta? Cadastre-se'}
                 </button>
@@ -229,32 +176,14 @@ export const Login: React.FC = () => {
                 <button
                     onClick={() => handleSocialLogin('google')}
                     disabled={loading}
-                    style={{
-                        padding: '12px 20px',
-                        background: '#db4437',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: 8,
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        flex: 1
-                    }}
+                    style={{ padding: '12px 20px', background: '#db4437', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '16px', flex: 1 }}
                 >
                     Google
                 </button>
                 <button
                     onClick={() => handleSocialLogin('facebook')}
                     disabled={loading}
-                    style={{
-                        padding: '12px 20px',
-                        background: '#1877f2',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: 8,
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        flex: 1
-                    }}
+                    style={{ padding: '12px 20px', background: '#1877f2', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '16px', flex: 1 }}
                 >
                     Facebook
                 </button>
