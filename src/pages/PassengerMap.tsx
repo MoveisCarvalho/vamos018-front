@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { useSocket } from '../hooks/useSocket';
@@ -34,16 +34,19 @@ export const PassengerMap: React.FC = () => {
 
     const pickupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const dropoffDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const initializedRef = useRef(false); // ADIÇÃO: controla se já definiu pickup inicial
 
     const defaultCenter: [number, number] = [-23.5505, -46.6333];
 
+    // Geolocalização – com inicialização única (ADIÇÃO)
     useEffect(() => {
         if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
+            const watchId = navigator.geolocation.watchPosition(
                 (position) => {
                     const loc: [number, number] = [position.coords.latitude, position.coords.longitude];
                     setCurrentLocation(loc);
-                    if (!pickup) {
+                    if (!initializedRef.current) {
+                        initializedRef.current = true;
                         setPickup(loc);
                         setPickupAddress('Minha localização atual');
                     }
@@ -51,6 +54,7 @@ export const PassengerMap: React.FC = () => {
                 (error) => console.error('Erro ao obter localização:', error),
                 { enableHighAccuracy: true, timeout: 10000 }
             );
+            return () => navigator.geolocation.clearWatch(watchId);
         }
     }, []);
 
@@ -119,20 +123,20 @@ export const PassengerMap: React.FC = () => {
         calculateQuote();
     }, [pickup, dropoff, routeCoords]);
 
-    // Socket
+    // Socket – com limpeza individual (ADIÇÃO)
     useEffect(() => {
         if (socket) {
-            socket.on('ride-accepted', (data) => {
+            const rideAcceptedHandler = (data: any) => {
                 alert('✅ Motorista a caminho!');
                 setRideStatus('accepted');
-            });
-            socket.on('driver-location-update', (data) => {
+            };
+            const driverLocationHandler = (data: any) => {
                 if (data.driverId) {
                     setDriverLocation({ lat: data.lat, lng: data.lng });
                 }
-            });
-            socket.on('ride-started', () => setRideStatus('in_progress'));
-            socket.on('ride-completed', () => {
+            };
+            const rideStartedHandler = () => setRideStatus('in_progress');
+            const rideCompletedHandler = () => {
                 alert('🏁 Corrida finalizada! Obrigado.');
                 setRideStatus('completed');
                 setCurrentRideId(null);
@@ -143,7 +147,19 @@ export const PassengerMap: React.FC = () => {
                 setDropoffAddress('');
                 setQuote(null);
                 setRouteCoords([]); // Limpar rota ao finalizar
-            });
+            };
+
+            socket.on('ride-accepted', rideAcceptedHandler);
+            socket.on('driver-location-update', driverLocationHandler);
+            socket.on('ride-started', rideStartedHandler);
+            socket.on('ride-completed', rideCompletedHandler);
+
+            return () => {
+                socket.off('ride-accepted', rideAcceptedHandler);
+                socket.off('driver-location-update', driverLocationHandler);
+                socket.off('ride-started', rideStartedHandler);
+                socket.off('ride-completed', rideCompletedHandler);
+            };
         }
     }, [socket]);
 
@@ -281,10 +297,14 @@ export const PassengerMap: React.FC = () => {
         }
     };
 
-    const markers = [];
-    if (pickup) markers.push({ lat: pickup[0], lng: pickup[1], label: '📍 Origem' });
-    if (dropoff) markers.push({ lat: dropoff[0], lng: dropoff[1], label: '🏁 Destino' });
-    if (driverLocation) markers.push({ lat: driverLocation.lat, lng: driverLocation.lng, label: '🚗 Motorista' });
+    // ADIÇÃO: useMemo para marcadores – evita recriação a cada render
+    const markers = useMemo(() => {
+        const mks = [];
+        if (pickup) mks.push({ lat: pickup[0], lng: pickup[1], label: '📍 Origem' });
+        if (dropoff) mks.push({ lat: dropoff[0], lng: dropoff[1], label: '🏁 Destino' });
+        if (driverLocation) mks.push({ lat: driverLocation.lat, lng: driverLocation.lng, label: '🚗 Motorista' });
+        return mks;
+    }, [pickup, dropoff, driverLocation]);
 
     return (
         <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f5f5f5' }}>

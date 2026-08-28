@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { useSocket } from '../hooks/useSocket';
@@ -24,14 +24,17 @@ export const DriverMap: React.FC = () => {
     const [toggleLoading, setToggleLoading] = useState(false);
 
     const defaultCenter: [number, number] = [-23.5505, -46.6333];
+    const locationRef = useRef<[number, number] | null>(null); // ADIÇÃO: ref para evitar re-renderização desnecessária
 
-    // Geolocalização e envio da posição
+    // Geolocalização e envio da posição – com ref para controle
     useEffect(() => {
         if (navigator.geolocation) {
             const watchId = navigator.geolocation.watchPosition(
                 (pos) => {
                     const { latitude, longitude } = pos.coords;
-                    setMyLocation([latitude, longitude]);
+                    const newLoc: [number, number] = [latitude, longitude];
+                    locationRef.current = newLoc;
+                    setMyLocation(newLoc);
                     if (isOnline && socket) {
                         socket.emit('driver-location', {
                             driverId: user?.id,
@@ -141,12 +144,16 @@ export const DriverMap: React.FC = () => {
         }
     };
 
-    const markers = [];
-    if (myLocation) markers.push({ lat: myLocation[0], lng: myLocation[1], label: '📍 Você' });
-    if (currentRide) {
-        markers.push({ lat: currentRide.pickupLocation.coordinates[1], lng: currentRide.pickupLocation.coordinates[0], label: '👤 Passageiro' });
-        markers.push({ lat: currentRide.dropoffLocation.coordinates[1], lng: currentRide.dropoffLocation.coordinates[0], label: '🏁 Destino' });
-    }
+    // ADIÇÃO: useMemo para marcadores – evita recriação a cada render
+    const markers = useMemo(() => {
+        const mks = [];
+        if (myLocation) mks.push({ lat: myLocation[0], lng: myLocation[1], label: '📍 Você' });
+        if (currentRide) {
+            mks.push({ lat: currentRide.pickupLocation.coordinates[1], lng: currentRide.pickupLocation.coordinates[0], label: '👤 Passageiro' });
+            mks.push({ lat: currentRide.dropoffLocation.coordinates[1], lng: currentRide.dropoffLocation.coordinates[0], label: '🏁 Destino' });
+        }
+        return mks;
+    }, [myLocation, currentRide]);
 
     return (
         <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f5f5f5' }}>
@@ -205,7 +212,7 @@ export const DriverMap: React.FC = () => {
 
             {/* Mapa */}
             <div style={{ flex: 1, position: 'relative' }}>
-                <Map center={myLocation || defaultCenter} markers={markers} height="100%" />
+                <Map center={myLocation || defaultCenter} markers={markers} height="100%" currentLocation={myLocation} />
                 <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,255,255,0.9)', padding: '8px 16px', borderRadius: 20, fontSize: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.2)', textAlign: 'center' }}>
                     {isOnline ? (currentRide ? '🟢 Em corrida...' : '🟢 Aguardando chamados...') : '🔴 Fique online para receber corridas'}
                 </div>

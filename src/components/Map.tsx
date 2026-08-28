@@ -28,6 +28,8 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
     const currentLocMarkerRef = useRef<L.Marker | null>(null);
     const userIconRef = useRef<L.DivIcon | null>(null);
     const routeLayerRef = useRef<L.Polyline | null>(null); // Referência para a linha da rota
+    const isMountedRef = useRef(false);
+    const lastRouteHashRef = useRef<string>('');
 
     useEffect(() => {
         clickHandlerRef.current = onMapClick;
@@ -47,6 +49,7 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
 
         const map = L.map(mapRef.current).setView(center, zoom);
         leafletMapRef.current = map;
+        isMountedRef.current = true;
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
@@ -61,6 +64,7 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
         return () => {
             map.remove();
             leafletMapRef.current = null;
+            isMountedRef.current = false;
         };
     }, []);
 
@@ -101,10 +105,15 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
         }
     }, [currentLocation]);
 
-    // NOVO EFEITO: Desenhar a rota (Polyline)
+    // NOVO EFEITO: Desenhar a rota (Polyline) com hash para evitar recriação desnecessária
     useEffect(() => {
         const map = leafletMapRef.current;
         if (!map) return;
+
+        // Gerar hash da rota para detectar mudanças reais
+        const routeHash = route.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join('|');
+        if (routeHash === lastRouteHashRef.current) return;
+        lastRouteHashRef.current = routeHash;
 
         if (routeLayerRef.current) {
             map.removeLayer(routeLayerRef.current);
@@ -120,14 +129,18 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
         }
     }, [route]);
 
+    // Efeito de centralização – só move se a distância for significativa (> 100m)
     useEffect(() => {
         const map = leafletMapRef.current;
-        if (map) {
-            if (currentLocation && route.length === 0) {
-                map.setView(currentLocation, zoom);
-            } else if (route.length === 0) {
-                map.setView(center, zoom);
-            }
+        if (!map || !isMountedRef.current) return;
+
+        if (route.length > 0) return; // se há rota, já foi ajustada
+
+        const targetCenter = currentLocation || center;
+        const currentCenter = map.getCenter();
+        const distance = map.distance(currentCenter, targetCenter);
+        if (distance > 100) {
+            map.setView(targetCenter, zoom);
         }
     }, [center, zoom, currentLocation, route.length]);
 
