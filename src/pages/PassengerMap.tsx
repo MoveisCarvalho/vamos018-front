@@ -420,6 +420,7 @@ export const PassengerMap: React.FC = () => {
                     height="100%"
                     currentLocation={currentLocation}
                     route={routeCoords} // Enviando a rota para o mapa desenhar
+                    autoFit={true} // ADICIONAR ESTA LINHA
                 />
                 {driverLocation && (
                     <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,255,255,0.9)', padding: '8px 16px', borderRadius: 20, fontSize: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>

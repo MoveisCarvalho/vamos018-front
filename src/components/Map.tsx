@@ -17,19 +17,31 @@ interface MapProps {
     onMapClick?: (lat: number, lng: number) => void;
     height?: string;
     currentLocation?: [number, number] | null;
-    route?: Array<[number, number]>; // NOVA PROP: Coordenadas da rota
+    route?: Array<[number, number]>;
+    /** Se true, centraliza o mapa na localização atual ou no centro sempre que mudar (apenas para passageiro com rota) */
+    autoFit?: boolean;
 }
 
-export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMapClick, height = '400px', currentLocation, route = [] }) => {
+export const Map: React.FC<MapProps> = ({
+    center,
+    zoom = 15,
+    markers = [],
+    onMapClick,
+    height = '400px',
+    currentLocation,
+    route = [],
+    autoFit = false
+}) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const leafletMapRef = useRef<L.Map | null>(null);
     const markersRef = useRef<L.Marker[]>([]);
     const clickHandlerRef = useRef(onMapClick);
     const currentLocMarkerRef = useRef<L.Marker | null>(null);
     const userIconRef = useRef<L.DivIcon | null>(null);
-    const routeLayerRef = useRef<L.Polyline | null>(null); // Referência para a linha da rota
+    const routeLayerRef = useRef<L.Polyline | null>(null);
     const isMountedRef = useRef(false);
     const lastRouteHashRef = useRef<string>('');
+    const initialCenterSetRef = useRef(false);
 
     useEffect(() => {
         clickHandlerRef.current = onMapClick;
@@ -44,6 +56,7 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
         });
     }, []);
 
+    // Inicialização do mapa (uma única vez)
     useEffect(() => {
         if (!mapRef.current || leafletMapRef.current) return;
 
@@ -60,6 +73,9 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
                 clickHandlerRef.current(e.latlng.lat, e.latlng.lng);
             }
         });
+
+        // Centraliza no centro inicial após carregar
+        initialCenterSetRef.current = true;
 
         return () => {
             map.remove();
@@ -84,33 +100,33 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
             markersRef.current.push(marker);
         });
 
-        if (markers.length > 0 && route.length === 0) {
+        // Ajustar bounds apenas se houver marcadores e não houver rota,
+        // e se for a primeira vez ou se o usuário não tiver interagido
+        if (markers.length > 0 && route.length === 0 && initialCenterSetRef.current) {
             const group = L.featureGroup(markersRef.current);
             map.fitBounds(group.getBounds(), { padding: [50, 50] });
+            initialCenterSetRef.current = false; // evita repetir
         }
     }, [markers, route.length]);
 
-    // Atualizar marcador de localização atual
+    // Atualizar marcador de localização atual (sem mexer na view)
     useEffect(() => {
         const map = leafletMapRef.current;
-        if (!map) return;
+        if (!map || !currentLocation) return;
 
-        if (currentLocation) {
-            if (currentLocMarkerRef.current) {
-                currentLocMarkerRef.current.setLatLng(currentLocation);
-            } else if (userIconRef.current) {
-                currentLocMarkerRef.current = L.marker(currentLocation, { icon: userIconRef.current }).addTo(map);
-                currentLocMarkerRef.current.bindPopup('Você está aqui');
-            }
+        if (currentLocMarkerRef.current) {
+            currentLocMarkerRef.current.setLatLng(currentLocation);
+        } else if (userIconRef.current) {
+            currentLocMarkerRef.current = L.marker(currentLocation, { icon: userIconRef.current }).addTo(map);
+            currentLocMarkerRef.current.bindPopup('Você está aqui');
         }
     }, [currentLocation]);
 
-    // NOVO EFEITO: Desenhar a rota (Polyline) com hash para evitar recriação desnecessária
+    // Desenhar rota e ajustar bounds (apenas se autoFit for true)
     useEffect(() => {
         const map = leafletMapRef.current;
         if (!map) return;
 
-        // Gerar hash da rota para detectar mudanças reais
         const routeHash = route.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join('|');
         if (routeHash === lastRouteHashRef.current) return;
         lastRouteHashRef.current = routeHash;
@@ -120,29 +136,19 @@ export const Map: React.FC<MapProps> = ({ center, zoom = 15, markers = [], onMap
             routeLayerRef.current = null;
         }
 
-        if (route && route.length > 0) {
+        if (route && route.length > 1) {
             const polyline = L.polyline(route, { color: '#007bff', weight: 5, opacity: 0.8 }).addTo(map);
             routeLayerRef.current = polyline;
 
-            // Ajustar o mapa para mostrar a rota inteira
-            map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+            // Ajusta o mapa para mostrar a rota inteira apenas se autoFit for true
+            if (autoFit) {
+                map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+            }
         }
-    }, [route]);
+    }, [route, autoFit]);
 
-    // Efeito de centralização – só move se a distância for significativa (> 100m)
-    useEffect(() => {
-        const map = leafletMapRef.current;
-        if (!map || !isMountedRef.current) return;
-
-        if (route.length > 0) return; // se há rota, já foi ajustada
-
-        const targetCenter = currentLocation || center;
-        const currentCenter = map.getCenter();
-        const distance = map.distance(currentCenter, targetCenter);
-        if (distance > 100) {
-            map.setView(targetCenter, zoom);
-        }
-    }, [center, zoom, currentLocation, route.length]);
+    // Centralização manual (expor método para o pai, mas não automática)
+    // O pai pode usar uma ref ou função para chamar map.setView
 
     return <div ref={mapRef} style={{ height, width: '100%' }} />;
 };

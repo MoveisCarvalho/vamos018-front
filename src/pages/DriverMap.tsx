@@ -17,44 +17,42 @@ export const DriverMap: React.FC = () => {
     const socket = useSocket(user?.id || null);
     const [availableRides, setAvailableRides] = useState<RideRequest[]>([]);
     const [currentRide, setCurrentRide] = useState<any>(null);
-    const [currentRideStatus, setCurrentRideStatus] = useState<string | null>(null); // 'accepted', 'in_progress'
+    const [currentRideStatus, setCurrentRideStatus] = useState<string | null>(null);
     const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
     const [isOnline, setIsOnline] = useState(false);
     const [loading, setLoading] = useState(false);
     const [toggleLoading, setToggleLoading] = useState(false);
 
     const defaultCenter: [number, number] = [-23.5505, -46.6333];
-    const locationRef = useRef<[number, number] | null>(null); // ADIÇÃO: ref para evitar re-renderização desnecessária
+    const mapRef = useRef<any>(null); // para referência futura (opcional)
 
-    // Geolocalização e envio da posição – com ref para controle
+    // Geolocalização – atualiza o estado, mas NÃO força centralização do mapa
     useEffect(() => {
-        if (navigator.geolocation) {
-            const watchId = navigator.geolocation.watchPosition(
-                (pos) => {
-                    const { latitude, longitude } = pos.coords;
-                    const newLoc: [number, number] = [latitude, longitude];
-                    locationRef.current = newLoc;
-                    setMyLocation(newLoc);
-                    if (isOnline && socket) {
-                        socket.emit('driver-location', {
-                            driverId: user?.id,
-                            lat: latitude,
-                            lng: longitude
-                        });
-                    }
-                },
-                (err) => console.error('Erro GPS:', err),
-                { enableHighAccuracy: true, timeout: 10000 }
-            );
-            return () => navigator.geolocation.clearWatch(watchId);
-        }
+        if (!navigator.geolocation) return;
+        const watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                const { latitude, longitude } = pos.coords;
+                const newLoc: [number, number] = [latitude, longitude];
+                setMyLocation(newLoc);
+                if (isOnline && socket) {
+                    socket.emit('driver-location', {
+                        driverId: user?.id,
+                        lat: latitude,
+                        lng: longitude
+                    });
+                }
+            },
+            (err) => console.error('Erro GPS:', err),
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+        return () => navigator.geolocation.clearWatch(watchId);
     }, [isOnline, socket, user?.id]);
 
+    // Socket events
     useEffect(() => {
         if (!socket) return;
 
         const handleNewRide = (data: RideRequest) => {
-            // [CORREÇÃO] Verificação para não adicionar corridas duplicadas
             setAvailableRides(prev => {
                 if (prev.some(r => r.rideId === data.rideId)) return prev;
                 return [...prev, data];
@@ -63,20 +61,16 @@ export const DriverMap: React.FC = () => {
         };
 
         socket.on('new-ride-available', handleNewRide);
-
-        // Atualiza o status se o passageiro cancelar
         socket.on('ride-cancelled', (data) => {
             setAvailableRides(prev => prev.filter(r => r.rideId !== data.rideId));
         });
 
-        // [CORREÇÃO] Limpeza para evitar múltiplos listeners
         return () => {
             socket.off('new-ride-available', handleNewRide);
             socket.off('ride-cancelled');
         };
     }, [socket, isOnline]);
 
-    // Botão Online/Offline (chama o backend)
     const toggleOnline = async () => {
         const newStatus = !isOnline;
         setToggleLoading(true);
@@ -91,7 +85,6 @@ export const DriverMap: React.FC = () => {
         }
     };
 
-    // Aceitar corrida
     const acceptRide = async (rideId: string) => {
         try {
             setLoading(true);
@@ -108,12 +101,10 @@ export const DriverMap: React.FC = () => {
         }
     };
 
-    // Recusar corrida (remove da lista)
     const declineRide = (rideId: string) => {
         setAvailableRides(prev => prev.filter(r => r.rideId !== rideId));
     };
 
-    // Iniciar corrida (quando chegar ao passageiro)
     const startRide = async () => {
         if (!currentRide) return;
         try {
@@ -128,7 +119,6 @@ export const DriverMap: React.FC = () => {
         }
     };
 
-    // Finalizar corrida
     const completeRide = async () => {
         if (!currentRide) return;
         try {
@@ -144,7 +134,7 @@ export const DriverMap: React.FC = () => {
         }
     };
 
-    // ADIÇÃO: useMemo para marcadores – evita recriação a cada render
+    // Memoizar marcadores
     const markers = useMemo(() => {
         const mks = [];
         if (myLocation) mks.push({ lat: myLocation[0], lng: myLocation[1], label: '📍 Você' });
@@ -157,7 +147,6 @@ export const DriverMap: React.FC = () => {
 
     return (
         <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f5f5f5' }}>
-            {/* Header */}
             <div style={{ padding: '12px 16px', background: 'white', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                 <div>
                     <h3 style={{ margin: 0 }}>🚗 Motorista</h3>
@@ -166,7 +155,6 @@ export const DriverMap: React.FC = () => {
                 <button onClick={logout} style={{ padding: '8px 12px', background: '#dc3545', color: 'white', border: 'none', borderRadius: 6 }}>Sair</button>
             </div>
 
-            {/* Controles Principais */}
             <div style={{ padding: '12px 16px', background: 'white', borderBottom: '1px solid #ddd', flexShrink: 0, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button
                     onClick={toggleOnline}
@@ -192,7 +180,6 @@ export const DriverMap: React.FC = () => {
                 )}
             </div>
 
-            {/* Lista de corridas disponíveis */}
             {availableRides.length > 0 && !currentRide && (
                 <div style={{ maxHeight: '30vh', overflowY: 'auto', background: 'white', borderBottom: '1px solid #ddd', padding: '8px 16px', flexShrink: 0 }}>
                     {availableRides.map((ride) => (
@@ -210,9 +197,14 @@ export const DriverMap: React.FC = () => {
                 </div>
             )}
 
-            {/* Mapa */}
             <div style={{ flex: 1, position: 'relative' }}>
-                <Map center={myLocation || defaultCenter} markers={markers} height="100%" currentLocation={myLocation} />
+                <Map
+                    center={myLocation || defaultCenter}
+                    markers={markers}
+                    height="100%"
+                    currentLocation={myLocation}
+                    autoFit={false} // desativa centralização automática
+                />
                 <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,255,255,0.9)', padding: '8px 16px', borderRadius: 20, fontSize: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.2)', textAlign: 'center' }}>
                     {isOnline ? (currentRide ? '🟢 Em corrida...' : '🟢 Aguardando chamados...') : '🔴 Fique online para receber corridas'}
                 </div>
