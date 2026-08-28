@@ -41,6 +41,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         const res = await api.post('/auth/login', payload);
         const { token, user } = res.data;
+
+        // LOG para ver o que o backend retornou
+        console.log('[LOGIN] Resposta da API:', { token, user });
+
+        // Força a atualização no localStorage e no estado
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(user));
         setUser(user);
