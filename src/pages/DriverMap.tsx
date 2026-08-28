@@ -24,9 +24,9 @@ export const DriverMap: React.FC = () => {
     const [toggleLoading, setToggleLoading] = useState(false);
 
     const defaultCenter: [number, number] = [-23.5505, -46.6333];
-    const mapRef = useRef<any>(null); // para referência futura (opcional)
+    const mapRef = useRef<any>(null);
 
-    // Geolocalização – atualiza o estado, mas NÃO força centralização do mapa
+    // Geolocalização
     useEffect(() => {
         if (!navigator.geolocation) return;
         const watchId = navigator.geolocation.watchPosition(
@@ -48,11 +48,15 @@ export const DriverMap: React.FC = () => {
         return () => navigator.geolocation.clearWatch(watchId);
     }, [isOnline, socket, user?.id]);
 
-    // Socket events
+    // Escuta de novas corridas – com logs e tratamento
     useEffect(() => {
-        if (!socket) return;
+        if (!socket) {
+            console.log('⏳ Socket não disponível ainda');
+            return;
+        }
 
         const handleNewRide = (data: RideRequest) => {
+            console.log('🚗 Nova corrida recebida:', data);
             setAvailableRides(prev => {
                 if (prev.some(r => r.rideId === data.rideId)) return prev;
                 return [...prev, data];
@@ -60,16 +64,28 @@ export const DriverMap: React.FC = () => {
             if (isOnline && navigator.vibrate) navigator.vibrate(200);
         };
 
-        socket.on('new-ride-available', handleNewRide);
-        socket.on('ride-cancelled', (data) => {
+        const handleRideCancelled = (data: { rideId: string }) => {
+            console.log('❌ Corrida cancelada:', data.rideId);
             setAvailableRides(prev => prev.filter(r => r.rideId !== data.rideId));
+        };
+
+        socket.on('new-ride-available', handleNewRide);
+        socket.on('ride-cancelled', handleRideCancelled);
+
+        // Log de conexão
+        socket.on('connect', () => {
+            console.log('✅ Socket conectado no DriverMap');
+            if (user?.id) {
+                socket.emit('authenticate', user.id);
+            }
         });
 
         return () => {
             socket.off('new-ride-available', handleNewRide);
-            socket.off('ride-cancelled');
+            socket.off('ride-cancelled', handleRideCancelled);
+            socket.off('connect');
         };
-    }, [socket, isOnline]);
+    }, [socket, isOnline, user?.id]);
 
     const toggleOnline = async () => {
         const newStatus = !isOnline;
@@ -134,7 +150,6 @@ export const DriverMap: React.FC = () => {
         }
     };
 
-    // Memoizar marcadores
     const markers = useMemo(() => {
         const mks = [];
         if (myLocation) mks.push({ lat: myLocation[0], lng: myLocation[1], label: '📍 Você' });
@@ -203,7 +218,7 @@ export const DriverMap: React.FC = () => {
                     markers={markers}
                     height="100%"
                     currentLocation={myLocation}
-                    autoFit={false} // desativa centralização automática
+                    autoFit={false}
                 />
                 <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,255,255,0.9)', padding: '8px 16px', borderRadius: 20, fontSize: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.2)', textAlign: 'center' }}>
                     {isOnline ? (currentRide ? '🟢 Em corrida...' : '🟢 Aguardando chamados...') : '🔴 Fique online para receber corridas'}
