@@ -22,6 +22,10 @@ export const DriverMap: React.FC = () => {
     const [isOnline, setIsOnline] = useState(false);
     const [loading, setLoading] = useState(false);
     const [toggleLoading, setToggleLoading] = useState(false);
+    const [driverRideRoute, setDriverRideRoute] = useState<[number, number][]>([]);
+    const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+    const [notificationType, setNotificationType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
+    const [passengerName, setPassengerName] = useState<string | null>(null); // NOVO
 
     const defaultCenter: [number, number] = [-23.5505, -46.6333];
     const mapRef = useRef<any>(null);
@@ -48,7 +52,7 @@ export const DriverMap: React.FC = () => {
         return () => navigator.geolocation.clearWatch(watchId);
     }, [isOnline, socket, user?.id]);
 
-    // Escuta de novas corridas – com logs e tratamento
+    // Escuta de novas corridas – apenas se online
     useEffect(() => {
         if (!socket) {
             console.log('⏳ Socket não disponível ainda');
@@ -56,6 +60,10 @@ export const DriverMap: React.FC = () => {
         }
 
         const handleNewRide = (data: RideRequest) => {
+            if (!isOnline) {
+                console.log('🔇 Motorista offline, ignorando corrida:', data.rideId);
+                return;
+            }
             console.log('🚗 Nova corrida recebida:', data);
             setAvailableRides(prev => {
                 if (prev.some(r => r.rideId === data.rideId)) return prev;
@@ -64,15 +72,29 @@ export const DriverMap: React.FC = () => {
             if (isOnline && navigator.vibrate) navigator.vibrate(200);
         };
 
-        const handleRideCancelled = (data: { rideId: string }) => {
-            console.log('❌ Corrida cancelada:', data.rideId);
+        const handleRideUnavailable = (data: { rideId: string }) => {
+            console.log('❌ Corrida não mais disponível:', data.rideId);
             setAvailableRides(prev => prev.filter(r => r.rideId !== data.rideId));
         };
 
-        socket.on('new-ride-available', handleNewRide);
-        socket.on('ride-cancelled', handleRideCancelled);
+        const handleRideCancelled = (data: { rideId: string, message: string }) => {
+            console.log('❌ Corrida cancelada recebida:', data);
+            if (currentRide && currentRide._id === data.rideId) {
+                setNotificationMessage(data.message || 'A corrida foi cancelada.');
+                setNotificationType('warning');
+                setCurrentRide(null);
+                setCurrentRideStatus(null);
+                setDriverRideRoute([]);
+                setPassengerName(null);
+                setTimeout(() => setNotificationMessage(null), 5000);
+            } else {
+                setAvailableRides(prev => prev.filter(r => r.rideId !== data.rideId));
+            }
+        };
 
-        // Log de conexão
+        socket.on('new-ride-available', handleNewRide);
+        socket.on('ride-unavailable', handleRideUnavailable);
+        socket.on('ride-cancelled', handleRideCancelled);
         socket.on('connect', () => {
             console.log('✅ Socket conectado no DriverMap');
             if (user?.id) {
@@ -82,10 +104,11 @@ export const DriverMap: React.FC = () => {
 
         return () => {
             socket.off('new-ride-available', handleNewRide);
+            socket.off('ride-unavailable', handleRideUnavailable);
             socket.off('ride-cancelled', handleRideCancelled);
             socket.off('connect');
         };
-    }, [socket, isOnline, user?.id]);
+    }, [socket, isOnline, user?.id, currentRide]);
 
     const toggleOnline = async () => {
         const newStatus = !isOnline;
@@ -109,6 +132,27 @@ export const DriverMap: React.FC = () => {
             setCurrentRide(ride);
             setCurrentRideStatus('accepted');
             setAvailableRides(prev => prev.filter(r => r.rideId !== rideId));
+            setPassengerName(ride.passengerName || 'Passageiro'); // NOVO
+
+            if (myLocation && ride.pickupLocation && ride.dropoffLocation) {
+                const pickupPos: [number, number] = [ride.pickupLocation.coordinates[1], ride.pickupLocation.coordinates[0]];
+                const dropoffPos: [number, number] = [ride.dropoffLocation.coordinates[1], ride.dropoffLocation.coordinates[0]];
+                const fetchRoute = async () => {
+                    try {
+                        const url = `https://router.project-osrm.org/route/v1/driving/${myLocation[1]},${myLocation[0]};${pickupPos[1]},${pickupPos[0]};${dropoffPos[1]},${dropoffPos[0]}?overview=full&geometries=geojson`;
+                        const response = await fetch(url);
+                        const data = await response.json();
+                        if (data.routes && data.routes.length > 0) {
+                            const coords = data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
+                            setDriverRideRoute(coords);
+                        }
+                    } catch (error) {
+                        console.error('Erro ao buscar rota para motorista:', error);
+                    }
+                };
+                fetchRoute();
+            }
+
             alert('✅ Corrida aceita! Dirija-se ao passageiro.');
         } catch (error) {
             alert('Erro ao aceitar corrida.');
@@ -143,6 +187,11 @@ export const DriverMap: React.FC = () => {
             alert('🏁 Corrida finalizada com sucesso!');
             setCurrentRide(null);
             setCurrentRideStatus(null);
+            setDriverRideRoute([]);
+            setPassengerName(null);
+            setNotificationMessage('Corrida finalizada!');
+            setNotificationType('info');
+            setTimeout(() => setNotificationMessage(null), 3000);
         } catch (error) {
             alert('Erro ao finalizar corrida.');
         } finally {
@@ -166,9 +215,29 @@ export const DriverMap: React.FC = () => {
                 <div>
                     <h3 style={{ margin: 0 }}>🚗 Motorista</h3>
                     <small style={{ color: '#666' }}>{user?.name}</small>
+                    {passengerName && (
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#007bff' }}>
+                            👤 Passageiro: {passengerName}
+                        </div>
+                    )}
                 </div>
                 <button onClick={logout} style={{ padding: '8px 12px', background: '#dc3545', color: 'white', border: 'none', borderRadius: 6 }}>Sair</button>
             </div>
+
+            {notificationMessage && (
+                <div style={{
+                    padding: '12px 16px',
+                    margin: '8px 16px',
+                    background: notificationType === 'warning' ? '#fff3cd' : '#d4edda',
+                    color: notificationType === 'warning' ? '#856404' : '#155724',
+                    borderRadius: 8,
+                    border: `1px solid ${notificationType === 'warning' ? '#ffc107' : '#c3e6cb'}`,
+                    textAlign: 'center',
+                    fontWeight: 'bold'
+                }}>
+                    {notificationMessage}
+                </div>
+            )}
 
             <div style={{ padding: '12px 16px', background: 'white', borderBottom: '1px solid #ddd', flexShrink: 0, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button
@@ -218,6 +287,7 @@ export const DriverMap: React.FC = () => {
                     markers={markers}
                     height="100%"
                     currentLocation={myLocation}
+                    route={driverRideRoute}
                     autoFit={false}
                 />
                 <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,255,255,0.9)', padding: '8px 16px', borderRadius: 20, fontSize: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.2)', textAlign: 'center' }}>

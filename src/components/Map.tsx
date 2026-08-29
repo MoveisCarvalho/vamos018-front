@@ -18,7 +18,12 @@ interface MapProps {
     height?: string;
     currentLocation?: [number, number] | null;
     route?: Array<[number, number]>;
-    /** Se true, centraliza o mapa na localização atual ou no centro sempre que mudar (apenas para passageiro com rota) */
+    routes?: Array<{
+        coords: Array<[number, number]>;
+        color?: string;
+        weight?: number;
+        opacity?: number;
+    }>;
     autoFit?: boolean;
 }
 
@@ -30,6 +35,7 @@ export const Map: React.FC<MapProps> = ({
     height = '400px',
     currentLocation,
     route = [],
+    routes = [],
     autoFit = false
 }) => {
     const mapRef = useRef<HTMLDivElement>(null);
@@ -39,8 +45,8 @@ export const Map: React.FC<MapProps> = ({
     const currentLocMarkerRef = useRef<L.Marker | null>(null);
     const userIconRef = useRef<L.DivIcon | null>(null);
     const routeLayerRef = useRef<L.Polyline | null>(null);
+    const additionalRoutesRef = useRef<L.Polyline[]>([]);
     const isMountedRef = useRef(false);
-    const lastRouteHashRef = useRef<string>('');
     const initialCenterSetRef = useRef(false);
 
     useEffect(() => {
@@ -56,7 +62,6 @@ export const Map: React.FC<MapProps> = ({
         });
     }, []);
 
-    // Inicialização do mapa (uma única vez)
     useEffect(() => {
         if (!mapRef.current || leafletMapRef.current) return;
 
@@ -74,7 +79,6 @@ export const Map: React.FC<MapProps> = ({
             }
         });
 
-        // Centraliza no centro inicial após carregar
         initialCenterSetRef.current = true;
 
         return () => {
@@ -84,7 +88,6 @@ export const Map: React.FC<MapProps> = ({
         };
     }, []);
 
-    // Atualizar marcadores de endereços
     useEffect(() => {
         const map = leafletMapRef.current;
         if (!map) return;
@@ -100,16 +103,13 @@ export const Map: React.FC<MapProps> = ({
             markersRef.current.push(marker);
         });
 
-        // Ajustar bounds apenas se houver marcadores e não houver rota,
-        // e se for a primeira vez ou se o usuário não tiver interagido
         if (markers.length > 0 && route.length === 0 && initialCenterSetRef.current) {
             const group = L.featureGroup(markersRef.current);
             map.fitBounds(group.getBounds(), { padding: [50, 50] });
-            initialCenterSetRef.current = false; // evita repetir
+            initialCenterSetRef.current = false;
         }
     }, [markers, route.length]);
 
-    // Atualizar marcador de localização atual (sem mexer na view)
     useEffect(() => {
         const map = leafletMapRef.current;
         if (!map || !currentLocation) return;
@@ -122,33 +122,44 @@ export const Map: React.FC<MapProps> = ({
         }
     }, [currentLocation]);
 
-    // Desenhar rota e ajustar bounds (apenas se autoFit for true)
     useEffect(() => {
         const map = leafletMapRef.current;
         if (!map) return;
 
-        const routeHash = route.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join('|');
-        if (routeHash === lastRouteHashRef.current) return;
-        lastRouteHashRef.current = routeHash;
-
+        // Remove rota principal
         if (routeLayerRef.current) {
             map.removeLayer(routeLayerRef.current);
             routeLayerRef.current = null;
         }
 
+        // Remove rotas adicionais
+        additionalRoutesRef.current.forEach(layer => map.removeLayer(layer));
+        additionalRoutesRef.current = [];
+
+        // Desenha rota principal
         if (route && route.length > 1) {
             const polyline = L.polyline(route, { color: '#007bff', weight: 5, opacity: 0.8 }).addTo(map);
             routeLayerRef.current = polyline;
-
-            // Ajusta o mapa para mostrar a rota inteira apenas se autoFit for true
             if (autoFit) {
                 map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
             }
         }
-    }, [route, autoFit]);
 
-    // Centralização manual (expor método para o pai, mas não automática)
-    // O pai pode usar uma ref ou função para chamar map.setView
+        // Desenha rotas adicionais
+        if (routes && routes.length > 0) {
+            routes.forEach((r) => {
+                if (r.coords && r.coords.length > 1) {
+                    const polyline = L.polyline(r.coords, {
+                        color: r.color || '#ff0000',
+                        weight: r.weight || 4,
+                        opacity: r.opacity || 0.7,
+                        dashArray: '5, 5'
+                    }).addTo(map);
+                    additionalRoutesRef.current.push(polyline);
+                }
+            });
+        }
+    }, [route, routes, autoFit]);
 
     return <div ref={mapRef} style={{ height, width: '100%' }} />;
 };
