@@ -25,7 +25,7 @@ export const DriverMap: React.FC = () => {
     const [driverRideRoute, setDriverRideRoute] = useState<[number, number][]>([]);
     const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
     const [notificationType, setNotificationType] = useState<'info' | 'success' | 'warning' | 'error'>('info');
-    const [passengerName, setPassengerName] = useState<string | null>(null); // NOVO
+    const [passengerName, setPassengerName] = useState<string | null>(null);
 
     const defaultCenter: [number, number] = [-23.5505, -46.6333];
     const mapRef = useRef<any>(null);
@@ -52,7 +52,7 @@ export const DriverMap: React.FC = () => {
         return () => navigator.geolocation.clearWatch(watchId);
     }, [isOnline, socket, user?.id]);
 
-    // Escuta de novas corridas – apenas se online
+    // Escuta de novas corridas
     useEffect(() => {
         if (!socket) {
             console.log('⏳ Socket não disponível ainda');
@@ -60,11 +60,12 @@ export const DriverMap: React.FC = () => {
         }
 
         const handleNewRide = (data: RideRequest) => {
+            console.log('🚗 Nova corrida recebida no DriverMap:', data);
+            // Verifica se o motorista está online (já garantido pelo backend, mas por segurança)
             if (!isOnline) {
                 console.log('🔇 Motorista offline, ignorando corrida:', data.rideId);
                 return;
             }
-            console.log('🚗 Nova corrida recebida:', data);
             setAvailableRides(prev => {
                 if (prev.some(r => r.rideId === data.rideId)) return prev;
                 return [...prev, data];
@@ -132,7 +133,7 @@ export const DriverMap: React.FC = () => {
             setCurrentRide(ride);
             setCurrentRideStatus('accepted');
             setAvailableRides(prev => prev.filter(r => r.rideId !== rideId));
-            setPassengerName(ride.passengerName || 'Passageiro'); // NOVO
+            setPassengerName(ride.passengerName || 'Passageiro');
 
             if (myLocation && ride.pickupLocation && ride.dropoffLocation) {
                 const pickupPos: [number, number] = [ride.pickupLocation.coordinates[1], ride.pickupLocation.coordinates[0]];
